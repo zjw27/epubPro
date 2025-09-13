@@ -266,11 +266,11 @@
   const NEAR_BOTTOM_PX = Math.max(600, window.innerHeight * 0.4); // 触底阈值
 
   // 统一走主进程计算 SIG（优先 path→fromPath，其次 blob→fromBlob；不在 renderer 做哈希）
-  const PIPELINE_VERSION = 'aot-v1';
-  async function computeSigFromFile(file) {
-    if (!window.sigAPI?.fromBlob) throw new Error('sigAPI.fromBlob 不可用');
-    return await window.sigAPI.fromBlob(file, { pipelineVersion: PIPELINE_VERSION, chunkSize: 2 * 1024 * 1024 });
-  }
+  // const PIPELINE_VERSION = 'aot-v1';
+  // async function computeSigFromFile(file) {
+  //   if (!window.sigAPI?.fromBlob) throw new Error('sigAPI.fromBlob 不可用');
+  //   return await window.sigAPI.fromBlob(file, { pipelineVersion: PIPELINE_VERSION, chunkSize: 2 * 1024 * 1024 });
+  // }
 
 
   // --- [renderer] drag & drop 绑定（最低可用：把本地路径交给主进程算 sig） ---
@@ -296,8 +296,11 @@
         const f0 = files[0];
         if (!f0) { setStatus?.('没有可用文件', { level: 'warn' }); return; }
         setStatus?.('计算签名中…', { sticky: true });
-        const sig = await computeSigFromFile(f0); // 由主进程流式计算
-        console.log('[drop] sig:', { sig });
+
+        const { sig, matched, entry } = await window.epubSig.computeFromFile(f0);
+
+        console.log('[drop] sig:', sig, 'matched:', matched, entry);
+
         clearStatus?.();
       } catch (err) {
         console.error('[drop] failed:', err);
