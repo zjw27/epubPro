@@ -265,18 +265,11 @@
 
   const NEAR_BOTTOM_PX = Math.max(600, window.innerHeight * 0.4); // 触底阈值
 
-  // 工具：WebCrypto 直接对 File/Blob 计算 SHA-256（不依赖本地路径）
+  // 统一走主进程计算 SIG（优先 path→fromPath，其次 blob→fromBlob；不在 renderer 做哈希）
   const PIPELINE_VERSION = 'aot-v1';
-  function _toHex(buffer) {
-    const bytes = new Uint8Array(buffer);
-    let out = '';
-    for (let i = 0; i < bytes.length; i++) out += bytes[i].toString(16).padStart(2, '0');
-    return out;
-  }
   async function computeSigFromFile(file) {
-    const buf = await file.arrayBuffer();
-    const digest = await crypto.subtle.digest('SHA-256', buf);
-    return `${_toHex(digest)}.${PIPELINE_VERSION}`;
+    if (!window.sigAPI?.fromBlob) throw new Error('sigAPI.fromBlob 不可用');
+    return await window.sigAPI.fromBlob(file, { pipelineVersion: PIPELINE_VERSION, chunkSize: 2 * 1024 * 1024 });
   }
 
 
@@ -303,8 +296,8 @@
         const f0 = files[0];
         if (!f0) { setStatus?.('没有可用文件', { level: 'warn' }); return; }
         setStatus?.('计算签名中…', { sticky: true });
-        const sig = await computeSigFromFile(f0);   // 直接用 File/Blob 计算
-        console.log('[drop] sig (renderer/WebCrypto):', { sig });
+        const sig = await computeSigFromFile(f0); // 由主进程流式计算
+        console.log('[drop] sig:', { sig });
         clearStatus?.();
       } catch (err) {
         console.error('[drop] failed:', err);
@@ -315,7 +308,6 @@
   console.log('[renderer] ready (sig-最低可用·renderer-file-hash)');
 
   // 工具
-  function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
   function chapterPath(idx) { return manifest?.chapters?.[idx]?.file || ''; }
 
   function offsetTopWithin(el, container) {
