@@ -6,14 +6,7 @@ const crypto = require('crypto');
 
 const pipelineVersion = 'aot-v1';
 
-// 注意：ESM 的 mjs 需用动态 import
-async function _loadSigHelper() {
-  const mod = await import('./parse_epub_step5.mjs');
-  return mod.computeSigFromPath;
-}
 
-
-// --- [main] IPC: 供渲染层 & 拖拽调用 --- 
 ipcMain.handle('sig:from-path', async (_evt, filePath) => {
   if (!filePath || !fs.existsSync(filePath)) throw new Error('Invalid path');
   const res = await computeSigAndCheck(filePath);
@@ -21,68 +14,13 @@ ipcMain.handle('sig:from-path', async (_evt, filePath) => {
   return res;
 });
 
-// --- [main] helper: stream sha256 ---
-function sha256File(filePath) {
-  return new Promise((resolve, reject) => {
-    const hasher = crypto.createHash('sha256');
-    const stream = fs.createReadStream(filePath);
-    stream.on('error', reject);
-    stream.on('data', chunk => hasher.update(chunk));
-    stream.on('end', () => resolve(hasher.digest('hex')));
-  });
-}
-
-// --- [main] helper: cache manifest path by sig ---
-function cacheManifestPathBySig(sig) {
-  const base = path.join(app.getPath('userData'), 'epub-cache', `epub:${sig}`);
-  return path.join(base, 'manifest.json');
-}
-
-// 优先在 EPUB 同目录查找解析结果：扫描所有子目录，只要有 manifest.json 就读出来比对 manifest.sig
-async function findParsedManifestNearby(epubPath, sig) {
-  const dir = path.dirname(epubPath);
-  try {
-    const list = await fs.promises.readdir(dir, { withFileTypes: true });
-    for (const ent of list) {
-      if (!ent.isDirectory()) continue;
-      const m = path.join(dir, ent.name, 'manifest.json');
-      try {
-        await fs.promises.access(m, fs.constants.F_OK);
-      } catch {
-        continue; // 这个子目录没有 manifest.json
-      }
-      try {
-        const raw = await fs.promises.readFile(m, 'utf8');
-        const j = JSON.parse(raw);
-        const msig = j?.sig || (j?.hash && j?.pipelineVersion ? `${j.hash}.${j.pipelineVersion}` : '');
-        if (msig === sig) return m; // 命中就近解析
-      } catch {
-        // 读坏了就跳过这个候选
-      }
-    }
-  } catch { /* ignore */ }
-  return null;
-}
-
-// --- [main] core: compute sig & check cache ---
+// 动态引入 mjs
 async function computeSigAndCheck(filePath) {
-  // 与解析产物一致的 sig：<sha256>.<pipelineVersion> —— 改为调用 mjs 的统一实现
-  const { computeSigFromPath } = await import('./parse_epub_step5.mjs');
-  const sig = await computeSigFromPath(filePath);
-  // 拆出 hash 与 pipelineVersion（按最后一个点位切分，容错无点的情况）
-  const i = sig.lastIndexOf('.');
-  const hash = i > 0 ? sig.slice(0, i) : sig;
-  const pipelineVersion = i > 0 ? sig.slice(i + 1) : 'aot-v1';
-  // 1) 就近命中：EPUB 同目录的已解析结果
-  const nearbyManifest = await findParsedManifestNearby(filePath, sig);
-  if (nearbyManifest && fs.existsSync(nearbyManifest)) {
-    return { filePath, hash, pipelineVersion, sig, matched: true, manifestPath: nearbyManifest, scope: 'nearby' };
-  }
-  // 2) 未命中：仅提供全局缓存候选路径（不视为命中）
-  const cacheManifest = cacheManifestPathBySig(sig);
-  return { filePath, hash, pipelineVersion, sig, matched: false, manifestPath: cacheManifest, scope: 'cache-candidate' };
+  const { fileHash } = await import('./parse_epub_step5.mjs');
+  const hash = await fileHash(filePath);       // ← 用流式哈希替换原 sha256File
+  const sig = `${hash}.aot-v1`;                // 保持你原来的 pipelineVersion
+  return { hash, sig, matched: false };        // 示例：保持返回对象结构
 }
-
 
 
 // 开发期兜底：关沙箱（放最前面更稳）
@@ -315,7 +253,29 @@ ipcMain.handle('pick:book-or-manifest', async (evt) => {
   return r.filePaths[0];
 });
 
+const _activeHashers = new Map(); // id -> { h, pv, wc }
 
+ipcMain.on('sig:hash-begin', (evt, { id, pipelineVersion }) => {
+  if (!id) return;
+  _activeHashers.set(id, { h: crypto.createHash('sha256'), pv: pipelineVersion || 'aot-v1', wc: evt.sender });
+});
 
+ipcMain.on('sig:hash-chunk', (_evt, { id, chunk }) => {
+  const hs = _activeHashers.get(id);
+  if (!hs || !chunk) return;
+  // 既兼容 Buffer，也兼容 ArrayBuffer
+  hs.h.update(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+});
 
-
+ipcMain.on('sig:hash-end', (_evt, { id }) => {
+  const hs = _activeHashers.get(id);
+  if (!hs) return;
+  try {
+    const hex = hs.h.digest('hex');
+    hs.wc.send('sig:hash-done', { id, sig: `${hex}.${hs.pv}` });
+  } catch (e) {
+    hs.wc.send('sig:hash-error', { id, error: String(e && e.message || e) });
+  } finally {
+    _activeHashers.delete(id);
+  }
+});
