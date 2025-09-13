@@ -19,7 +19,19 @@ async function computeSigAndCheck(filePath) {
   const { fileHash } = await import('./parse_epub_step5.mjs');
   const hash = await fileHash(filePath);       // ← 用流式哈希替换原 sha256File
   const sig = `${hash}.aot-v1`;                // 保持你原来的 pipelineVersion
-  return { hash, sig, matched: false };        // 示例：保持返回对象结构
+
+  // 读取用户数据目录下的 .epub-index\library-index.json
+  const indexPath = path.join(app.getPath('userData'), '.epub-index', 'library-index.json');
+  let matched = false, entry = null;
+  try {
+    const txt = await fsp.readFile(indexPath, 'utf8');
+    const arr = JSON.parse(txt);
+    entry = Array.isArray(arr) ? arr.find(x => x && x.sig === sig) : null;
+    matched = !!entry;
+  } catch (_) {
+    // 没有索引文件或解析失败就当没命中
+  }
+  return { hash, sig, matched, entry }
 }
 
 
@@ -279,3 +291,32 @@ ipcMain.on('sig:hash-end', (_evt, { id }) => {
     _activeHashers.delete(id);
   }
 });
+
+// 新：从字节数组计算 sig 并做索引匹配（drop 正解桥）
+ipcMain.handle('sig:from-bytes-check', async (_evt, u8arr) => {
+  const mod = await import('./parse_epub_step5.mjs');
+  const hash = await mod.fileHashFromBytes(Buffer.from(u8arr));
+  const pipelineVersion = 'aot-v1'; // 和你的解析产物一致
+  const sig = `${hash}.${pipelineVersion}`;
+
+  // 索引匹配
+  const indexPath = path.join(app.getPath('userData'), '.epub-index', 'library-index.json');
+  let matched = false, entry = null;
+  try {
+    const txt = await fsp.readFile(indexPath, 'utf8');
+    const arr = JSON.parse(txt);
+    if (Array.isArray(arr)) {
+      entry = arr.find(x => x && x.sig === sig) || null;
+      matched = !!entry;
+    }
+  } catch {
+    // 索引不存在/损坏 → 视为未命中
+  }
+  return { sig, matched, entry };
+});
+
+
+
+
+
+
