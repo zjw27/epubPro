@@ -1,0 +1,670 @@
+/* ===== 基础变量（浅色） ===== */
+:root {
+    --bg: #f8f9fa;
+    --panel: #f4f6f8;
+    --text: #111;
+    --muted: #60666f;
+    --border: #e5e7eb;
+
+    /* 目录侧栏尺寸与动画 */
+    --toc-w: 264px;
+    /* 展开宽 */
+    --rail-w: 56px;
+    /* 收起宽 */
+    --toc-bg: color-mix(in oklab, white 98%, black 2%);
+    --toc-sep: rgba(0, 0, 0, .08);
+    --toc-fg: rgba(0, 0, 0, .92);
+    --hover-bg: #f0f2f5;
+    --active-bg: #e9eef5;
+    --toc-header-h: 44px;
+    --toc-fz: 15px;
+    --toc-lh: 1.58;
+    --toc-xpad: 28px;
+    --toc-ypad: 8px;
+    --toc-hover: color-mix(in oklab, var(--bg) 94%, black 6%);
+    --toc-active: color-mix(in oklab, white 90%, black 10%);
+
+    --reader-font: "方正兰亭圆_GBK", "Source Han Sans SC", "SF Pro Text", "PingFang SC", Arial, "Noto Sans CJK SC", "Helvetica Neue", sans-serif;
+    --toc-font: "Source Han Sans SC", "SF Pro Text", "PingFang SC", "Segoe UI", system-ui, Roboto, Arial, "Noto Sans CJK SC", "Helvetica Neue", sans-serif;
+
+    --vh: 100dvh;
+    --speed: .24s;
+    --easing: cubic-bezier(.2, .7, .2, 1);
+    --content-font-size: 16px;
+    --content-pad: 24px 28px;
+
+    --accent-muted: color-mix(in oklab, var(--toc-fg) 78%, black 22%);
+    --accent-rest: color-mix(in oklab, var(--toc-fg) 88%, black 12%);
+
+    --page-w: 72ch;
+    /* 读感合适：约 720–760px 等价 */
+    --page-pad: 16px;
+    /* 两侧安全内边距，避免贴边 */
+
+    --pill-fz: 12px;
+    --pill-lh: 20px;
+    --pill-py: 2px;
+    --pill-px: 8px;
+
+    /* 更淡的中性背景与字色 */
+    --pill-bg: color-mix(in oklab, var(--bg) 96%, black 2%);
+    --pill-fg: color-mix(in oklab, var(--toc-fg) 60%, black 10%);
+    --pill-border: color-mix(in oklab, var(--bg) 88%, black 12%);
+}
+
+/* ===== 深色变量叠加 ===== */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --toc-fg: rgba(255, 255, 255, .92);
+        --toc-sep: rgba(255, 255, 255, .10);
+        --toc-bg: color-mix(in oklab, var(--bg) 88%, black 12%);
+        --hover-bg: rgba(255, 255, 255, .06);
+        --active-bg: rgba(255, 255, 255, .10);
+    }
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --accent-muted: color-mix(in oklab, var(--toc-fg) 88%, white 12%);
+        --accent-rest: color-mix(in oklab, var(--toc-fg) 92%, white 8%);
+    }
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --pill-bg: color-mix(in oklab, var(--bg) 86%, white 14%);
+        --pill-fg: color-mix(in oklab, var(--toc-fg) 80%, white 20%);
+        --pill-border: color-mix(in oklab, var(--bg) 78%, white 22%);
+    }
+}
+
+/* ===== 全局 ===== */
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    height: 100%;
+    margin: 0 !important;
+    padding-bottom: 0 !important;
+    background: var(--bg);
+    overflow: auto;
+    /* 把滚动条交给 body */
+}
+
+body {
+    background: transparent;
+}
+
+/* ===== 顶栏（保留，可按需增删） ===== */
+#overlay-bar {
+    position: fixed;
+    inset: 0 0 auto 0;
+    height: var(--overlay-h);
+    border-bottom: 1px solid var(--overlay-border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 var(--overlay-right-safe) 0 12px;
+    -webkit-app-region: drag;
+    user-select: none;
+    background: transparent !important;
+}
+
+button,
+a,
+input,
+.no-drag {
+    -webkit-app-region: no-drag;
+}
+
+/* 状态条（如无需可删除 #overlay-status 元素本身） */
+/* #overlay-status,
+#status.status {
+    margin-left: auto;
+    font-size: 12px;
+    color: #8F8F96;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    pointer-events: none;
+    white-space: nowrap;
+    max-width: 40vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    height: 18px;
+    line-height: 18px;
+} */
+
+#overlay-status {
+    position: fixed;
+    top: 10px;
+    /* 需要更贴边可调 6–12px */
+    right: 20px;
+    z-index: 1000;
+
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    padding: 4px 10px;
+    min-height: 24px;
+    line-height: 24px;
+
+    background: var(--pill-bg);
+    color: var(--pill-fg);
+    border: 1px solid var(--pill-border);
+    border-radius: 9999px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .06);
+
+    white-space: nowrap;
+    max-width: 48vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    /* 淡入 */
+    opacity: 0;
+    transform: translateY(-2px);
+    transition: opacity 160ms ease, transform 160ms ease;
+
+    pointer-events: none;
+    /* 不挡鼠标 */
+
+    /* 尺寸更小、字更轻 */
+    font-size: var(--pill-fz);
+    line-height: var(--pill-lh);
+    padding: var(--pill-py) var(--pill-px);
+    font-weight: 400;
+    letter-spacing: .1px;
+    -webkit-font-smoothing: antialiased;
+
+    /* 更淡的视觉 */
+    background: var(--pill-bg);
+    color: #f0f2f5;
+    border: 1px solid var(--pill-border);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .04);
+    border-radius: 9999px;
+}
+
+/* 可选：再更轻一档的“ghost”变体（需要时给元素加 .ghost 类） */
+#overlay-status.ghost{
+  background: color-mix(in oklab, var(--pill-bg) 80%, transparent 20%);
+  border-color: color-mix(in oklab, var(--pill-border) 60%, transparent 40%);
+  color: color-mix(in oklab, var(--pill-fg) 85%, var(--bg) 15%);
+  box-shadow: none;
+}
+
+/* 可选：更微型一档（给元素加 .sm） */
+#overlay-status.sm{
+  --pill-fz: 11px;
+  --pill-lh: 18px;
+  --pill-py: 1px;
+  --pill-px: 7px;
+}
+
+/* 有内容时显现 */
+#overlay-status.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* 启动期（避免与抽屉过渡叠动画） */
+html.booting #overlay-status {
+    transition: none !important;
+    opacity: 0;
+}
+
+/* ===== 视口与主布局（核心：仅此处控制列宽 + 过渡） ===== */
+.viewport {
+    position: fixed;
+    inset: 0;
+}
+
+.viewport>main {
+    display: grid;
+    grid-template-columns: var(--toc-w) 1fr;
+    /* transition: grid-template-columns var(--speed) var(--easing); */
+    /* 默认 = 展开态：不开布局过渡（打开抽屉时不动画） */
+    transition: none;
+    height: 100%;
+}
+
+html.is-rail .viewport>main {
+    grid-template-columns: var(--rail-w) 1fr;
+    /* 收起 */
+}
+
+/* 收起态：才启用网格过渡（关闭抽屉时有动画） */
+.is-rail .viewport>main {
+    transition: grid-template-columns var(--speed, 160ms) var(--easing, ease);
+}
+
+.viewport>main>* {
+    min-height: 0;
+}
+
+
+/* 允许内部滚动 */
+
+/* ===== 左栏（aside）与正文（article） ===== */
+aside {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    block-size: 100%;
+    border-right: 1px solid rgba(0, 0, 0, .06);
+    background: var(--toc-bg);
+    /* overflow: hidden; */
+    overflow: visible;
+}
+
+article {
+    overflow: auto;
+    padding: 24px 28px;
+    line-height: 1.8;
+}
+
+article img,
+image,
+svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    width: auto;
+    margin: 0 auto;
+    object-fit: contain;
+}
+
+/* ===== 目录头 + 切换按钮 ===== */
+.toc-header {
+    position: relative;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    padding-inline: 12px 40px;
+    flex: 0 0 auto;
+    justify-content: space-around;
+}
+
+.toc-header::after {
+    content: "";
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 0;
+    height: 1px;
+    background: color-mix(in oklab, #000 15%, transparent);
+    transform: scaleY(.6);
+    transform-origin: bottom;
+}
+
+.toc-toggle {
+    position: absolute;
+    right: 10px;
+    bottom: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 25%;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    user-select: none;
+}
+
+.toc-toggle:hover {
+    background: var(--hover-bg);
+    /* 仍用你的中性浅灰 */
+}
+
+.toc-toggle svg {
+    color: var(--accent-rest);
+    /* 常态石墨灰 */
+    transition: color .2s;
+    /* 颜色还是用 transition 平滑过渡 */
+}
+
+.toc-toggle:hover svg {
+    color: var(--accent-muted);
+    /* Hover 加深一点的石墨灰 */
+}
+
+html.is-rail .toc-toggle svg {
+    animation: spin-cute 1000ms ease forwards;
+    /* 播放一次动画 */
+}
+
+@keyframes spin-cute {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    70% {
+        transform: rotate(360deg);
+    }
+
+    /* 多转一圈 */
+    100% {
+        transform: rotate(540deg);
+    }
+
+    /* 停在目标位 */
+}
+
+/* ===== 目录标题与列表 ===== */
+.toc-title {
+    font-size: 13px;
+    font-family: Arial, Helvetica, sans-serif !important;
+    font-weight: 600;
+    color: #8F8F96;
+    opacity: .9;
+    flex: 0 0 auto;
+    padding: 12px 14px 8px 14px;
+    letter-spacing: .2px;
+}
+
+#toc {
+    flex: 1 1 auto;
+    overflow: auto;
+    min-height: 0;
+    max-width: var(--toc-w, 264px);
+    border-right: 0;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+    -webkit-font-smoothing: antialiased;
+    box-shadow: none;
+    overscroll-behavior: contain;
+    padding-bottom: 0;
+    font-family: var(--toc-font) !important;
+
+}
+
+#toc .chap {
+    position: relative;
+    isolation: isolate;
+    margin: 4px 8px;
+    padding: 8px 20px;
+    border-radius: 10px;
+    font-size: 15px;
+    line-height: 1.55;
+    white-space: nowrap;
+    overflow: visible;
+    border: 0 !important;
+    cursor: pointer;
+}
+
+/* 内层只管文本省略：裁剪 + 省略号 */
+#toc .chap .t {
+    display: block;
+    min-width: 0;
+    /* 关键：允许在 flex 里被压缩 */
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* 阴影搬到伪元素：只做透明度过渡，不改 transform */
+#toc .chap::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    /* 覆盖整块 */
+    border-radius: inherit;
+    /* 跟随原圆角（尽量用整数像素圆角） */
+    pointer-events: none;
+    /* 不阻挡鼠标 */
+    /* 用整数像素的阴影参数，减少 DPR 1.1 的亚像素拖影 */
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .12), 0 1px 3px rgba(0, 0, 0, .08);
+    opacity: 0;
+    transition: opacity .18s ease;
+    /* 只让透明度动 */
+    will-change: opacity;
+}
+
+/* hover 态：轻浮起 */
+#toc .chap:hover::before {
+    opacity: 1;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, .12), 0 1px 4px rgba(0, 0, 0, .08);
+}
+
+/* 悬停/激活时显示阴影（如果有 .active 态也一起亮） */
+#toc .chap:hover::before,
+#toc .chap:focus-visible::before,
+#toc .chap.active::before {
+    opacity: 1;
+}
+
+/* #toc .chap.active {
+    background: var(--toc-active) !important;
+    font-weight: 500;
+} */
+
+/* active 态：更深一些，层次更强 */
+#toc .chap.active::before {
+    opacity: 1;
+    box-shadow: 0 3px 9px rgba(0, 0, 0, .14), 0 1px 4px rgba(0, 0, 0, .10);
+}
+
+/* rail 模式：隐藏列表与标题，仅保留按钮条 */
+html.is-rail .toc-title,
+html.is-rail #toc {
+    opacity: 0;
+    transform: translateX(-6px);
+    pointer-events: none;
+    /* transition: opacity .18s ease, transform .18s ease; */
+    transition: none !important;
+    display: none;
+}
+
+/* 外层保持全宽，负责滚动条 */
+.content-wrap {
+    flex: 1;
+    /* 占满剩余空间 */
+    overflow-y: auto;
+    /* 滚动条挂在这里 */
+}
+
+/* 折叠状态（ROOT.classList 有 is-rail 时） */
+.is-rail #content {
+    /* padding-left: 8%;
+    padding-right: 8%; */
+    max-width: 820px;
+    /* 可选，避免过宽 */
+    margin: 0 auto;
+    /* 保证内容居中 */
+}
+
+/* ===== 目录滚动条（统一保留一套） ===== */
+#toc::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+#toc::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#toc::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, .28);
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+#toc::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, .45);
+}
+
+/* 防止书内 CSS 干扰目录排版 */
+#toc,
+#toc * {
+    writing-mode: horizontal-tb !important;
+    text-orientation: mixed !important;
+    text-align: left !important;
+    letter-spacing: normal !important;
+    text-justify: auto !important;
+}
+
+/* ===== 正文区域通用排版 ===== */
+#content {
+    overflow: auto;
+    min-height: 0;
+    overflow-anchor: none;
+    scrollbar-gutter: stable both-edges;
+}
+
+#content .chapter {
+    display: flow-root;
+    contain: layout paint;
+    padding-bottom: 24px;
+}
+
+#content .chapter+.chapter {
+    box-shadow: inset 0 1px 0 rgba(0, 0, 0, .08);
+    padding-top: 32px;
+}
+
+#content.jump-lock .chapter:first-child+.chapter {
+    box-shadow: none !important;
+}
+
+#content .chapter .chapter-body {
+    font-family: var(--reader-font);
+    max-width: var(--page-w);
+    margin-inline: auto;
+    padding-inline: var(--page-pad);
+}
+
+#content .chapter .chapter-body p {
+    font-family: inherit;
+    font-size: var(--content-font-size);
+    -webkit-font-smoothing: antialiased;
+    text-indent: 2em;
+}
+
+.chapter-body>.logo img {
+    width: 35%;
+}
+
+/* ====== 章节标题 ====== */
+.chapter-body h2 {
+    text-align: center;
+    /* 居中 */
+    font-size: 1.1rem;
+    /* 比正文小 */
+    line-height: 1.4;
+    margin: 1.5em 0 1em;
+    color: #444;
+    /* 主色，稳重一点 */
+}
+
+/* 内部 span（序号 / 上下）更小 & 微红 */
+.chapter-body h2 span {
+    font-size: 0.75em;
+    /* 再缩小一点 */
+    color: #b33;
+    /* 微红，不刺眼 */
+    opacity: 0.85;
+}
+
+/* 资源自适应列宽（避免图片撑开导致视觉跳动） */
+#content .chapter-body img,
+#content .chapter-body video,
+#content .chapter-body canvas {
+    max-width: 80%;
+    height: auto;
+    display: block;
+}
+
+
+#content .chapter {
+    opacity: 1;
+    transition: opacity 120ms ease-out;
+    will-change: opacity;
+}
+
+#content .chapter:empty {
+    opacity: 0;
+}
+
+.content-wrap .page {
+    max-width: 90ch;
+    margin: 0 auto;
+    padding-inline: 16px;
+}
+
+/* .rail main {
+    transition: none !important;
+} */
+
+/* 章节分隔节奏（可选） */
+:root {
+    --sep-gap: 25px;
+    --sep-color: rgba(0, 0, 0, .10);
+}
+
+#content .chapter .chapter-marker {
+    position: relative;
+    margin: var(--sep-gap) 0 calc(var(--sep-gap)*1.25);
+    height: 0;
+}
+
+#content .chapter .chapter-marker::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 2px;
+    height: 1px;
+    background-color: #000;
+    transform: scaleY(.5);
+    transform-origin: top;
+    pointer-events: none;
+}
+
+#content .chapter:first-child .chapter-marker {
+    display: none;
+}
+
+body.sep-space #content .chapter .chapter-marker::before {
+    display: none;
+}
+
+:root {
+    --sep-color: transparent;
+}
+
+/* 只留白不画线时 */
+
+/* ===== 无障碍：减少动画 ===== */
+@media (prefers-reduced-motion: reduce) {
+
+    .viewport>main,
+    aside,
+    .toc-header,
+    .toc-title,
+    #toc,
+    .toc-toggle svg,
+    #content .chapter {
+        transition: none !important;
+    }
+}
+
+/* ===== 其它常用标题/段落（可按需扩展） ===== */
+article h1,
+article h2,
+article h3 {
+    margin: 1.2em 0 .6em;
+}
+
+article p {
+    margin: .5em 0;
+}
+
+.empty {
+    color: var(--muted);
+}
+
+.pad {
+    padding: 12px 14px;
+}

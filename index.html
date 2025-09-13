@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <title>EPUB Plan A</title>
+  <!-- 允许内联样式（书内 <style>）、允许 data: 图片与字体 -->
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' data:; img-src 'self' data:; font-src 'self' data:">
+  <link rel="stylesheet" href="./styles.css">
+  <style>
+    html,
+    body {
+      background: #FAFAFB;
+    }
+
+    body {
+      opacity: 0;
+      transition: opacity .12s ease;
+    }
+
+    .ready body {
+      opacity: 1;
+    }
+  </style>
+</head>
+
+<body class="sep-space">
+  <!-- <div id="overlay-bar" role="presentation" aria-hidden="true">
+    <img id="overlay-ico" src="./sanbox/Favicon.ico" alt="" draggable="false" />
+    <div id="overlay-title" class="drag"></div>
+    <div class="spacer"></div>
+  </div> -->
+  <!-- 无障碍：隐藏的读屏节点（页面外） -->
+  <div id="sr-status" aria-live="polite"
+    style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;"></div>
+  <div id="overlay-status" class="no-drag ghost sm" aria-live="polite"></div>
+  <div class="viewport">
+    <main>
+      <aside>
+        <div class="toc-header">
+          <!-- <div id="overlay-status" class="no-drag" aria-live="off"></div> -->
+          <div class="toc-toggle">
+            <svg viewBox="0 0 1024 1024" width="24" height="24" fill="currentColor">
+              <path
+                d="M768 153.6a102.4 102.4 0 0 1 102.4 102.4v512a102.4 102.4 0 0 1-102.4 102.4H384V153.6H768zM332.8 153.6v716.8H256a102.4 102.4 0 0 1-102.4-102.4V256a102.4 102.4 0 0 1 102.4-102.4h76.8z m51.2-51.2H256a153.6 153.6 0 0 0-153.6 153.6v512a153.6 153.6 0 0 0 153.6 153.6h512a153.6 153.6 0 0 0 153.6-153.6V256a153.6 153.6 0 0 0-153.6-153.6H384z m135.4752 391.4752a25.6 25.6 0 0 0 0 36.2496l128 128a25.6 25.6 0 1 0 36.2496-36.2496L573.7984 512l109.9264-109.8752a25.6 25.6 0 1 0-36.1984-36.2496l-128 128z">
+              </path>
+            </svg>
+          </div>
+        </div>
+        <!-- <div class="toc-title">目录</div> -->
+        <nav id="toc">
+          <div class="empty pad"></div>
+        </nav>
+      </aside>
+      <!-- 外层全宽容器 -->
+      <div class="content-wrap">
+        <div class="page">
+          <article id="content">
+            <div class="empty pad"></div>
+          </article>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="./renderer.js"></script>
+</body>
+
+</html>
