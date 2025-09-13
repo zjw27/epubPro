@@ -6,7 +6,8 @@ import { createHash } from 'crypto';
 import unzipper from 'unzipper';
 import { XMLParser } from 'fast-xml-parser';
 import mime from 'mime-types';
-import crypto from 'crypto';
+// import crypto from 'crypto';
+import crypto from 'node:crypto';
 
 const PIPELINE_VERSION = 'aot-v1';
 // const STEP_BUILD = 'step4-idempotent-1.0';
@@ -19,6 +20,7 @@ function sha256(buf) {
   return createHash('sha256').update(buf).digest('hex');
 }
 
+// 只做保留，不参与drop计算
 export async function computeSigFromPath(filePath, pipelineVersion = 'aot-v1') {
   return await new Promise((resolve, reject) => {
     const h = crypto.createHash('sha256');
@@ -30,6 +32,16 @@ export async function computeSigFromPath(filePath, pipelineVersion = 'aot-v1') {
       resolve(`${hex}.${pipelineVersion}`);
     });
   });
+}
+
+
+export async function fileHashFromBytes(bytes) {
+  // bytes: Buffer | Uint8Array | ArrayBuffer
+  const buf = Buffer.isBuffer(bytes)
+    ? bytes
+    : Buffer.from(bytes.buffer ? bytes.buffer : bytes);
+  const hash = crypto.createHash('sha256').update(buf).digest('hex');
+  return hash;
 }
 
 // ---------- 索引(JSON)：路径 & 读写 ----------
