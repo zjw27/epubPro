@@ -1,4 +1,5 @@
 // main.js
+// v-0914-10
 const { app, BrowserWindow, dialog, Menu, ipcMain, nativeTheme } = require('electron');
 const path = require('path');
 const crypto = require('crypto');
@@ -402,6 +403,7 @@ ipcMain.handle('sig:check', async (_evt, sig) => {
   } catch { /* 不存在/损坏都当未命中 */ }
   return { matched, entry };
 });
+
 
 
 
