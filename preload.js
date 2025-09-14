@@ -54,7 +54,7 @@ contextBridge.exposeInMainWorld('eapi', {
 })
 
 contextBridge.exposeInMainWorld('epubSig', {
-  // 拖拽/自定义入口：传入文件路径，返回 { hash, sig, matched, ... }
+  // drop 禁用
   computeFromPath(filePath) {
     return ipcRenderer.invoke('sig:from-path', filePath);
   },
@@ -95,5 +95,20 @@ contextBridge.exposeInMainWorld('sigAPI', {
 
     return await done;
   },
+});
+
+contextBridge.exposeInMainWorld('parser', {
+  /** 把 File/Blob 发给 main → worker 执行重活，返回 {hash, …} */
+  async parseFile(fileOrBlob, opts = {}) {
+    const u8 = new Uint8Array(await fileOrBlob.arrayBuffer());
+    const { ok, result, error } = await ipcRenderer.invoke('worker:parse', u8, opts);
+    if (!ok) throw new Error(error || 'parse failed');
+    return result; // {hash, …}
+  },
+});
+
+contextBridge.exposeInMainWorld('sig', {
+  /** 只做索引匹配 */
+  check: (sig) => ipcRenderer.invoke('sig:check', sig),
 });
 
