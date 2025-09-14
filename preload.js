@@ -117,3 +117,9 @@ contextBridge.exposeInMainWorld('sig', {
   check: (sig) => ipcRenderer.invoke('sig:check', sig),
 });
 
+contextBridge.exposeInMainWorld('aot', {
+  async parseEpub(fileOrBlob) {
+    const u8 = new Uint8Array(await fileOrBlob.arrayBuffer());
+    return await ipcRenderer.invoke('aot:parse-epub', u8);
+  }
+});
