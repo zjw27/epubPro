@@ -7,6 +7,8 @@ const fsp = require('fs/promises');
 const { Worker } = require('node:worker_threads');
 const fs = require('node:fs');
 const { log } = require('node:console');
+const { spawn } = require('child_process');
+const os = require('os');
 
 
 // 开发期兜底：关沙箱（放最前面更稳）
@@ -410,21 +412,46 @@ ipcMain.handle('worker:parse', async (_evt, u8arr, opts = {}) => {
 
 // —— IPC：只做 sig 匹配（读 userData/.epub-index/library-index.json）——
 ipcMain.handle('sig:check', async (_evt, sig) => {
-  const indexPath = path.join(app.getPath('userData'), '.epub-index', 'library-index.json');
+  const searchDirs = [
+    app.getPath('userData'),              // 旧目录
+    app.getAppPath(),                     // 应用目录（AOT 索引通常写在这里）
+  ];
   let matched = false, entry = null;
-  try {
-    const txt = await fsp.readFile(indexPath, 'utf8');
-    const data = JSON.parse(txt);
-    if (Array.isArray(data)) {
-      entry = data.find(x => x && x.sig === sig) || null;
-    } else if (data && typeof data === 'object' && data.items) {
-      entry = data.items[sig] || null;
-    }
-    matched = !!entry;
-  } catch { }
+  for (const root of searchDirs) {
+    const indexPath = path.join(root, '.epub-index', 'library-index.json');
+    try {
+      const txt = await fsp.readFile(indexPath, 'utf8');
+      const data = JSON.parse(txt);
+      entry = Array.isArray(data)
+        ? data.find(x => x && x.sig === sig)
+        : (data?.items?.[sig] || null);
+      if (entry) { matched = true; break; }
+    } catch { /* 忽略错误，继续下一个目录 */ }
+  }
   return { matched, entry };
 });
 
+ipcMain.handle('aot:parse-epub', async (_evt, u8arr) => {
+  try {
+    const buf = Buffer.from(u8arr);
+    const tmpPath = path.join(os.tmpdir(), `aot_${Date.now()}.epub`);
+    await fsp.writeFile(tmpPath, buf);
+
+    const outRoot = app.getPath('userData'); // 与 sig:check 读取位置保持一致
+    await new Promise((resolve, reject) => {
+      const proc = spawn(process.execPath,
+        [path.join(__dirname, 'parser.cjs'), tmpPath, outRoot],
+        { stdio: ['ignore', 'inherit', 'inherit'] });
+      proc.on('error', reject);
+      proc.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`parser exit ${code}`))));
+    });
+
+    return { ok: true };
+  } catch (err) {
+    console.error('[aot:parse-epub] failed:', err);
+    return { ok: false, error: String(err?.message || err) };
+  }
+});
 
 
 
