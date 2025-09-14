@@ -1,22 +1,25 @@
 // main.js
 const { app, BrowserWindow, dialog, Menu, ipcMain, nativeTheme } = require('electron');
-const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-
 const pipelineVersion = 'aot-v1';
+const fsp = require('fs/promises');
+const { Worker } = require('node:worker_threads');
+const fs = require('node:fs');
 
 
-ipcMain.handle('sig:from-path', async (_evt, filePath) => {
-  if (!filePath || !fs.existsSync(filePath)) throw new Error('Invalid path');
-  const res = await computeSigAndCheck(filePath);
-  console.log('[ipc] sig:from-path =>', res);
-  return res;
-});
+// ipcMain.handle('sig:from-path', async (_evt, filePath) => {
+//   if (!filePath || !fs.existsSync(filePath)) throw new Error('Invalid path');
+//   const res = await computeSigAndCheck(filePath);
+//   console.log('[ipc] sig:from-path =>', res);
+//   return res;
+// });
+
+
 
 // 动态引入 mjs
 async function computeSigAndCheck(filePath) {
-  const { fileHash } = await import('./parse_epub_step5.mjs');
+  const { fileHash } = await import('./parser before.cjs');
   const hash = await fileHash(filePath);       // ← 用流式哈希替换原 sha256File
   const sig = `${hash}.aot-v1`;                // 保持你原来的 pipelineVersion
 
@@ -77,7 +80,8 @@ function createWindow() {
   buildMenu(win);
   // 只保留一种加载方式（本地 index.html）
   win.loadFile(path.join(__dirname, 'index.html'));
-
+  win.webContents.on('will-navigate', (e) => e.preventDefault());
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.on('page-title-updated', (e) => {
     e.preventDefault();
     win.setTitle('EPUB for Javen');  // 可省略，已在构造器里设过
@@ -199,7 +203,63 @@ function createWindow() {
       return;
     }
   });
+
+  return win;
 }
+
+/** 跑一次 worker 任务（每次启动一个，简单稳妥；后续可做池化） */
+function runParseInWorker(bufferLike, task = 'parse', opts = {}) {
+  return new Promise((resolve, reject) => {
+    const workerPath = path.join(__dirname, 'parser.worker.cjs');
+    if (!fs.existsSync(workerPath)) {
+      return reject(new Error('worker file not found: ' + workerPath));
+    }
+    const worker = new Worker(workerPath, { workerData: {} });
+
+    let settled = false;
+    const cleanup = () => worker.terminate().catch(() => { });
+    const settle = (fn, val) => { if (settled) return; settled = true; clearTimeout(timer); cleanup(); fn(val); };
+    const timer = setTimeout(() => settle(reject, new Error('worker timeout')), 60000);
+
+    worker.once('error', (err) => settle(reject, err));
+    worker.once('exit', (code) => {
+      if (!settled && code !== 0) {
+        console.error('[worker] exit with code', code);
+        settle(reject, new Error('worker exited:' + code));
+      }
+    });
+
+    worker.on('message', (msg) => {
+      if (!msg || typeof msg !== 'object') return;
+      if (msg.type === 'boot') {
+        console.log('[worker boot]', msg.dir, msg.files);
+      } else if (msg.type === 'progress') {
+        console.log('[worker progress]', msg.phase, msg.pct, msg.byteLength ?? '');
+      } else if (msg.type === 'done') {
+        settle(resolve, msg.result);
+      } else if (msg.type === 'error') {
+        console.error('[worker error]', msg.message);
+        settle(reject, new Error(msg.message || 'worker error'));
+      }
+    });
+
+    // 规范化为 ArrayBuffer（transferable），避免把 Node Buffer 直接塞进 transferList
+    let u8;
+    if (Buffer.isBuffer(bufferLike)) {
+      u8 = new Uint8Array(bufferLike.buffer, bufferLike.byteOffset, bufferLike.byteLength);
+    } else if (bufferLike?.buffer instanceof ArrayBuffer) {
+      u8 = new Uint8Array(bufferLike.buffer, bufferLike.byteOffset || 0, bufferLike.byteLength ?? bufferLike.length ?? 0);
+      if (u8.byteLength === 0) u8 = new Uint8Array(bufferLike); // 兜底
+    } else {
+      u8 = new Uint8Array(bufferLike || []);
+    }
+    const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength); // 独立的 ArrayBuffer
+    try { worker.postMessage({ task, buffer: ab, opts }, [ab]); }
+    catch { worker.postMessage({ task, buffer: ab, opts }); }
+  });
+}
+
+
 
 app.whenReady().then(() => {
   createWindow();
@@ -210,14 +270,6 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (!isMac) app.quit();
-});
-
-// 监听渲染进程事件并触发相关操作
-ipcMain.on('open-epub', async (evt) => {
-  const win = BrowserWindow.fromWebContents(evt.sender);
-  // …对话框/解析…
-  const payload = await parseEpub(file);   // <- 你真实的解析
-  win.webContents.send('book:loaded', payload);  // <- 补这一行
 });
 
 ipcMain.handle('pick-epub', async () => {
@@ -293,13 +345,51 @@ ipcMain.on('sig:hash-end', (_evt, { id }) => {
 });
 
 // 新：从字节数组计算 sig 并做索引匹配（drop 正解桥）
-ipcMain.handle('sig:from-bytes-check', async (_evt, u8arr) => {
-  const mod = await import('./parse_epub_step5.mjs');
-  const hash = await mod.fileHashFromBytes(Buffer.from(u8arr));
-  const pipelineVersion = 'aot-v1'; // 和你的解析产物一致
-  const sig = `${hash}.${pipelineVersion}`;
+// ipcMain.handle('sig:from-bytes-check', async (_evt, u8arr) => {
+//   try {
+//     // 1) 规范化 Buffer（避免结构化克隆后的类型差异）
+//     const buf = Buffer.isBuffer(u8arr)
+//       ? u8arr
+//       : (u8arr?.buffer instanceof ArrayBuffer)
+//         ? Buffer.from(u8arr.buffer)
+//         : Buffer.from(u8arr || []);
 
-  // 索引匹配
+//     // 2) 直接用 node:crypto 算 SHA-256，避免 mjs 动态 import 带来的不确定性
+//     const hash = require('crypto').createHash('sha256').update(buf).digest('hex');
+//     const sig = `${hash}.aot-v1`;
+
+//     // 3) 匹配索引（任何异常都吞掉，仅当未命中处理）
+//     const indexPath = path.join(app.getPath('userData'), '.epub-index', 'library-index.json');
+//     let matched = false, entry = null;
+//     try {
+//       const txt = await fsp.readFile(indexPath, 'utf8');
+//       const arr = JSON.parse(txt);
+//       if (Array.isArray(arr)) {
+//         entry = arr.find(x => x && x.sig === sig) || null;
+//         matched = !!entry;
+//       }
+//     } catch { }
+
+//     return { sig, matched, entry };
+//   } catch (err) {
+//     console.error('[sig:from-bytes-check] failed:', err);
+//     return { sig: null, matched: false, entry: null, error: String(err?.message || err) };
+//   }
+// });
+
+// —— IPC：renderer 调用，让 worker 干重活（hash/parse）——
+ipcMain.handle('worker:parse', async (_evt, u8arr, opts = {}) => {
+  try {
+    const result = await runParseInWorker(u8arr, 'parse', opts);
+    return { ok: true, result };
+  } catch (err) {
+    console.error('[worker:parse] failed:', err);
+    return { ok: false, error: String(err?.message || err) };
+  }
+});
+
+// —— IPC：只做 sig 匹配（读 userData/.epub-index/library-index.json）——
+ipcMain.handle('sig:check', async (_evt, sig) => {
   const indexPath = path.join(app.getPath('userData'), '.epub-index', 'library-index.json');
   let matched = false, entry = null;
   try {
@@ -309,10 +399,8 @@ ipcMain.handle('sig:from-bytes-check', async (_evt, u8arr) => {
       entry = arr.find(x => x && x.sig === sig) || null;
       matched = !!entry;
     }
-  } catch {
-    // 索引不存在/损坏 → 视为未命中
-  }
-  return { sig, matched, entry };
+  } catch { /* 不存在/损坏都当未命中 */ }
+  return { matched, entry };
 });
 
 
