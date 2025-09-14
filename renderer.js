@@ -265,6 +265,8 @@
 
   const NEAR_BOTTOM_PX = Math.max(600, window.innerHeight * 0.4); // 触底阈值
 
+  const PIPELINE_VERSION = 'aot-v1';
+
   // 统一走主进程计算 SIG（优先 path→fromPath，其次 blob→fromBlob；不在 renderer 做哈希）
   // const PIPELINE_VERSION = 'aot-v1';
   // async function computeSigFromFile(file) {
@@ -294,7 +296,8 @@
     document.addEventListener('drop', async (e) => {
       e.preventDefault();
       root.classList.remove('is-dragover');
-      if (busy) return; busy = true;
+      if (busy) return;
+      busy = true;
 
       try {
         const f0 = (e.dataTransfer?.files || [])[0];
@@ -314,7 +317,12 @@
 
         // ③ （可选）继续：命中旧书就 openFromIndexEntry(entry)，否则 freshParseFromFile(f0)
         // await openEntryUnified(f0, { sig, matched, entry });
-
+        if (matched && entry?.manifestPath) {
+          await bootWithManifest(entry.manifestPath);
+        } else {
+          // 没命中缓存，直接按照文件路径解析并加载
+          await openEntryUnified(f0.path || f0.name);
+        }
       } catch (err) {
         console.error('[drop] failed:', err);
         typeof setStatus === 'function' && setStatus('拖放失败：' + (err?.message || err), { level: 'error', sticky: true });
@@ -1007,29 +1015,23 @@
     const lower = p.toLowerCase();
     try {
       // A) manifest.json：直接打开
-      if (lower.endsWith('manifest.json') || /[\\/]manifest\.json$/.test(lower)) {
-        setStatus('打开已解析书…', { sticky: true });
-        await bootWithManifest(p);
-        clearStatus?.();
-        return;
-      }
-
-      // B) .epub：先算 sig，命中则直接打开缓存的 manifest
       if (lower.endsWith('.epub')) {
-        if (!window.epubSig?.computeFromPath) {
-          setStatus('缺少 epubSig.computeFromPath', { level: 'error', sticky: true });
-          return;
-        }
         setStatus('计算 EPUB 签名…', { sticky: true });
-        const info = await window.epubSig.computeFromPath(p);
-        if (typeof renderSigInfo === 'function') renderSigInfo('menu-open', info);
 
-        if (info?.matched && info?.manifestPath && await window.eapi.exists(info.manifestPath)) {
+        // 读取二进制 → 计算 hash
+        const bytes = await window.eapi.readFileAsBytes(p);
+        const { hash } = await window.parser.parseFile(new Blob([bytes]));
+        const sig = `${hash}.${PIPELINE_VERSION}`;
+
+        // 索引匹配
+        const { matched, entry } = await window.sig.check(sig);
+        if (matched && entry?.manifestPath && await window.eapi.exists(entry.manifestPath)) {
           setStatus('命中缓存，正在打开…', { sticky: true });
-          await bootWithManifest(info.manifestPath);
+          await bootWithManifest(entry.manifestPath);
           clearStatus?.();
         } else {
-          setStatus(`未发现匹配的 manifest（sig=${info?.sig || 'N/A'}）`, { level: 'warn' });
+          setStatus(`未发现匹配的 manifest（sig=${sig}）`, { level: 'warn' });
+          // 如果想直接解析 EPUB，可调用自己的 freshParseFromFile(p)
         }
         return;
       }
@@ -1071,7 +1073,7 @@
       if (!p) { setStatus('未选择文件'); return; }
 
       // 统一入口：类型校验 + 旧书命中 + 分派
-      // await openEntryUnified(p);
+      await openEntryUnified(p);
     } catch (err) {
       console.error(err);
       setStatus('加载失败：' + (err?.message || err));
