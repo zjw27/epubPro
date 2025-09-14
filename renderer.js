@@ -296,8 +296,6 @@
     document.addEventListener('drop', async (e) => {
       e.preventDefault();
       root.classList.remove('is-dragover');
-      if (busy) return;
-      busy = true;
 
       try {
         const f0 = (e.dataTransfer?.files || [])[0];
@@ -305,30 +303,40 @@
 
         typeof setStatus === 'function' && setStatus('解析中（worker）…', { sticky: true });
 
-        // ① 让 worker 干重活（hash/解析）
         const { hash } = await window.parser.parseFile(f0);
         const sig = `${hash}.aot-v1`;
 
         // ② 用 sig 做索引匹配（main 读 JSON）
-        const { matched, entry } = await window.sig.check(sig);
+        let { matched, entry } = await window.sig.check(sig);
 
         console.log('[drop] sig:', sig, 'matched:', matched, entry || null);
         typeof clearStatus === 'function' && clearStatus();
 
         // ③ （可选）继续：命中旧书就 openFromIndexEntry(entry)，否则 freshParseFromFile(f0)
-        // await openEntryUnified(f0, { sig, matched, entry });
+
         if (matched && entry?.manifestPath) {
           await bootWithManifest(entry.manifestPath);
         } else {
-          // 没命中缓存，直接按照文件路径解析并加载
-          await openEntryUnified(f0.path || f0.name);
+          // 未命中缓存：启动 AOT 解析
+          try {
+            setStatus('未命中缓存，正在解析 EPUB…', { sticky: true });
+            const res = await window.aot.parseEpub(f0);
+            if (res?.ok) {
+              // 解析完成后再次匹配索引
+              const chk = await window.sig.check(sig);
+              if (chk.matched && chk.entry?.manifestPath) {
+                await bootWithManifest(chk.entry.manifestPath);
+                return;
+              }
+            } else {
+              console.warn('解析失败:', res?.error);
+            }
+          } catch (e) {
+            console.error('AOT 解析出错:', e);
+          }
         }
-      } catch (err) {
-        console.error('[drop] failed:', err);
-        typeof setStatus === 'function' && setStatus('拖放失败：' + (err?.message || err), { level: 'error', sticky: true });
-      } finally {
-        busy = false;
-      }
+      } catch { }
+      await openEntryUnified(f0.path || f0.name);
     });
   }
 
@@ -1024,15 +1032,36 @@
         const sig = `${hash}.${PIPELINE_VERSION}`;
 
         // 索引匹配
-        const { matched, entry } = await window.sig.check(sig);
+        let { matched, entry } = await window.sig.check(sig);
         if (matched && entry?.manifestPath && await window.eapi.exists(entry.manifestPath)) {
           setStatus('命中缓存，正在打开…', { sticky: true });
           await bootWithManifest(entry.manifestPath);
           clearStatus?.();
-        } else {
-          setStatus(`未发现匹配的 manifest（sig=${sig}）`, { level: 'warn' });
-          // 如果想直接解析 EPUB，可调用自己的 freshParseFromFile(p)
+          return;
         }
+
+        // 未命中：尝试解析并更新索引
+        setStatus('未命中缓存，正在解析 EPUB…', { sticky: true });
+        try {
+          const res = await window.aot.parseEpub(new Blob([bytes]));
+          if (res?.ok) {
+            // 再次检查索引
+            const chk = await window.sig.check(sig);
+            if (chk.matched && chk.entry?.manifestPath &&
+              await window.eapi.exists(chk.entry.manifestPath)) {
+              await bootWithManifest(chk.entry.manifestPath);
+              clearStatus?.();
+              return;
+            }
+          } else {
+            console.warn('解析失败:', res?.error);
+          }
+        } catch (err) {
+          console.error('AOT 解析出错:', err);
+        }
+
+        // 最终仍未找到：提示解析完成但无匹配
+        setStatus(`解析完成，但未能匹配 manifest（sig=${sig}）`, { level: 'error', sticky: true });
         return;
       }
 
