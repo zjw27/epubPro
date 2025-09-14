@@ -272,43 +272,59 @@
   //   return await window.sigAPI.fromBlob(file, { pipelineVersion: PIPELINE_VERSION, chunkSize: 2 * 1024 * 1024 });
   // }
 
-
-  // --- [renderer] drag & drop 绑定（最低可用：把本地路径交给主进程算 sig） ---
-  (function bindDrop() {
-    const dropZone = document;
+  // 最小可用版：只负责拖入文件 → 计算 sig → 匹配索引 → 打印结果
+  function bindDrop() {
     const root = document.documentElement;
+    let busy = false;
 
-    dropZone.addEventListener('dragover', (e) => {
-      e.preventDefault();
+    ['dragover', 'drop'].forEach(t => {
+      window.addEventListener(t, e => e.preventDefault(), true);
+      document.addEventListener(t, e => e.preventDefault(), true);
+    });
+
+    document.addEventListener('dragover', () => {
       root.classList.add('is-dragover');
-      setStatus?.('拖入 .epub 或 manifest.json', { sticky: true });
+      typeof setStatus === 'function' && setStatus('拖入 .epub 或 manifest.json', { sticky: true });
     });
-    dropZone.addEventListener('dragenter', () => { root.classList.add('is-dragover'); });
-    ['dragleave', 'dragend', 'mouseout'].forEach(type => {
-      dropZone.addEventListener(type, () => { root.classList.remove('is-dragover'); });
+    document.addEventListener('dragleave', () => {
+      root.classList.remove('is-dragover');
+      typeof clearStatus === 'function' && clearStatus();
     });
 
-    dropZone.addEventListener('drop', async (e) => {
+    document.addEventListener('drop', async (e) => {
       e.preventDefault();
       root.classList.remove('is-dragover');
+      if (busy) return; busy = true;
+
       try {
-        const files = [...(e.dataTransfer?.files || [])];
-        const f0 = files[0];
-        if (!f0) { setStatus?.('没有可用文件', { level: 'warn' }); return; }
-        setStatus?.('计算签名中…', { sticky: true });
+        const f0 = (e.dataTransfer?.files || [])[0];
+        if (!f0) return;
 
-        const { sig, matched, entry } = await window.epubSig.computeFromFile(f0);
+        typeof setStatus === 'function' && setStatus('解析中（worker）…', { sticky: true });
 
-        console.log('[drop] sig:', sig, 'matched:', matched, entry);
+        // ① 让 worker 干重活（hash/解析）
+        const { hash } = await window.parser.parseFile(f0);
+        const sig = `${hash}.aot-v1`;
 
-        clearStatus?.();
+        // ② 用 sig 做索引匹配（main 读 JSON）
+        const { matched, entry } = await window.sig.check(sig);
+
+        console.log('[drop] sig:', sig, 'matched:', matched, entry || null);
+        typeof clearStatus === 'function' && clearStatus();
+
+        // ③ （可选）继续：命中旧书就 openFromIndexEntry(entry)，否则 freshParseFromFile(f0)
+        // await openEntryUnified(f0, { sig, matched, entry });
+
       } catch (err) {
         console.error('[drop] failed:', err);
-        setStatus?.('拖放失败：' + (err?.message || err), { level: 'error', sticky: true });
+        typeof setStatus === 'function' && setStatus('拖放失败：' + (err?.message || err), { level: 'error', sticky: true });
+      } finally {
+        busy = false;
       }
     });
-  })();
-  console.log('[renderer] ready (sig-最低可用·renderer-file-hash)');
+  }
+
+  bindDrop();
 
   // 工具
   function chapterPath(idx) { return manifest?.chapters?.[idx]?.file || ''; }
@@ -1026,10 +1042,7 @@
     }
   }
   // 可选：暴露到 window 以便调试
-  window.openEntryUnified = openEntryUnified;
-
-
-
+  // window.openEntryUnified = openEntryUnified;
 
 
   // renderer — 允许选择 .epub 或 manifest.json；
@@ -1058,7 +1071,7 @@
       if (!p) { setStatus('未选择文件'); return; }
 
       // 统一入口：类型校验 + 旧书命中 + 分派
-      await openEntryUnified(p);
+      // await openEntryUnified(p);
     } catch (err) {
       console.error(err);
       setStatus('加载失败：' + (err?.message || err));
