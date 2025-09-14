@@ -2,9 +2,9 @@ const fs = require('fs');
 const os = require('os');
 const fsp = require('fs/promises');
 const path = require('path');
-const {createHash } = require('crypto');
+const { createHash } = require('crypto');
 const unzipper = require('unzipper');
-const {XMLParser } = require('fast-xml-parser');
+const { XMLParser } = require('fast-xml-parser');
 const mime = require('mime-types');
 // import crypto from 'crypto';
 const crypto = require('node:crypto');
@@ -1116,10 +1116,31 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  console.error('解析失败:', err);
-  process.exit(1);
-});
+// 只在作为 CLI 执行时运行 main()
+if (require.main === module) {
+  main().catch(err => {
+    console.error('解析失败:', err);
+    process.exit(1);
+  });
+}
+
+// 根据 Buffer/Uint8Array 计算哈希，供 worker 使用
+async function hashBytes(buf) {
+  return await fileHashFromBytes(buf);
+}
+
+// 简化的 EPUB 解析：只计算哈希并返回 { hash }
+async function parseEpub(bytes, opts = {}) {
+  const hash = await fileHashFromBytes(bytes);
+  return { hash };
+}
 
 
-module.exports = { computeSigFromPath, fileHashFromBytes, getImageSize, fileHash };
+module.exports = {
+  computeSigFromPath,
+  fileHashFromBytes,
+  getImageSize,
+  fileHash,
+  hashBytes,
+  parseEpub,
+};
