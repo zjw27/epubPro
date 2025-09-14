@@ -1,5 +1,5 @@
 // parser.worker.js — Node worker 线程：只和主进程通信，不碰 UI
-const { parentPort, workerData } = require('node:worker_threads');
+const { parentPort } = require('node:worker_threads');
 const path = require('node:path');
 const fs = require('node:fs');
 // 启动探针（看清 worker 目录和是否能看到 parser.cjs）
