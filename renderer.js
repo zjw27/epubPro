@@ -275,9 +275,8 @@
   // }
 
   // 最小可用版：只负责拖入文件 → 计算 sig → 匹配索引 → 打印结果
-  function bindDrop() {
+    function bindDrop() {
     const root = document.documentElement;
-    let busy = false;
 
     ['dragover', 'drop'].forEach(t => {
       window.addEventListener(t, e => e.preventDefault(), true);
@@ -313,11 +312,10 @@
         typeof clearStatus === 'function' && clearStatus();
 
         // ③ （可选）继续：命中旧书就 openFromIndexEntry(entry)，否则 freshParseFromFile(f0)
-
         if (matched && entry?.manifestPath) {
           await bootWithManifest(entry.manifestPath);
         } else {
-          // 未命中缓存：启动 AOT 解析
+          // 未命中缓存：启动 AOT 解析，并在解析完成后重试索引
           try {
             setStatus('未命中缓存，正在解析 EPUB…', { sticky: true });
             const res = await window.aot.parseEpub(f0);
@@ -331,16 +329,19 @@
             } else {
               console.warn('解析失败:', res?.error);
             }
+            // 解析完成但仍未命中索引：提示用户
+            setStatus(`解析完成，但未能匹配 manifest（sig=${sig}）`, { level: 'error', sticky: true });
           } catch (e) {
             console.error('AOT 解析出错:', e);
+            setStatus('解析出错：' + (e?.message || e), { level: 'error', sticky: true });
           }
         }
-      } catch { }
-      await openEntryUnified(f0.path || f0.name);
+      } catch { /* ignore errors */ }
+      // 不再调用 openEntryUnified(f0.path || f0.name)，避免依赖文件路径
     });
   }
 
-  bindDrop();
+    bindDrop();
 
   // 工具
   function chapterPath(idx) { return manifest?.chapters?.[idx]?.file || ''; }
