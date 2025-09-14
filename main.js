@@ -1,4 +1,3 @@
-// main.js
 // v-0914-10
 const { app, BrowserWindow, dialog, Menu, ipcMain, nativeTheme } = require('electron');
 const path = require('path');
@@ -7,16 +6,37 @@ const pipelineVersion = 'aot-v1';
 const fsp = require('fs/promises');
 const { Worker } = require('node:worker_threads');
 const fs = require('node:fs');
+const { log } = require('node:console');
 
 
+// 开发期兜底：关沙箱（放最前面更稳）
+app.commandLine.appendSwitch('no-sandbox');
+
+// 通过文件路径计算 sig，并匹配索引
 // ipcMain.handle('sig:from-path', async (_evt, filePath) => {
 //   if (!filePath || !fs.existsSync(filePath)) throw new Error('Invalid path');
-//   const res = await computeSigAndCheck(filePath);
-//   console.log('[ipc] sig:from-path =>', res);
-//   return res;
+
+//   // 1) 读取文件内容并计算 SHA‑256 哈希
+//   const buf = await fsp.readFile(filePath);
+//   const hash = crypto.createHash('sha256').update(buf).digest('hex');
+//   const sig = `${hash}.aot-v1`;
+
+//   // 2) 在用户数据目录的 .epub-index/library-index.json 中查找该 sig
+//   const indexPath = path.join(app.getPath('userData'), '.epub-index', 'library-index.json');
+//   let matched = false;
+//   let entry = null;
+//   try {
+//     const arr = JSON.parse(await fsp.readFile(indexPath, 'utf8'));
+//     if (Array.isArray(arr)) {
+//       entry = arr.find(x => x && x.sig === sig) || null;
+//       matched = !!entry;
+//     }
+//   } catch {
+//     // 缺少索引文件或解析失败时认为未命中
+//   }
+
+//   return { sig, matched, entry };
 // });
-
-
 
 // 动态引入 mjs
 async function computeSigAndCheck(filePath) {
@@ -30,6 +50,8 @@ async function computeSigAndCheck(filePath) {
   try {
     const txt = await fsp.readFile(indexPath, 'utf8');
     const arr = JSON.parse(txt);
+    console.log(txt);
+
     entry = Array.isArray(arr) ? arr.find(x => x && x.sig === sig) : null;
     matched = !!entry;
   } catch (_) {
@@ -37,10 +59,6 @@ async function computeSigAndCheck(filePath) {
   }
   return { hash, sig, matched, entry }
 }
-
-
-// 开发期兜底：关沙箱（放最前面更稳）
-app.commandLine.appendSwitch('no-sandbox');
 
 const isMac = process.platform === 'darwin';
 
@@ -212,6 +230,7 @@ function createWindow() {
 function runParseInWorker(bufferLike, task = 'parse', opts = {}) {
   return new Promise((resolve, reject) => {
     const workerPath = path.join(__dirname, 'parser.worker.cjs');
+    console.log('[worker path]', workerPath, fs.existsSync(workerPath));
     if (!fs.existsSync(workerPath)) {
       return reject(new Error('worker file not found: ' + workerPath));
     }
@@ -395,15 +414,16 @@ ipcMain.handle('sig:check', async (_evt, sig) => {
   let matched = false, entry = null;
   try {
     const txt = await fsp.readFile(indexPath, 'utf8');
-    const arr = JSON.parse(txt);
-    if (Array.isArray(arr)) {
-      entry = arr.find(x => x && x.sig === sig) || null;
-      matched = !!entry;
+    const data = JSON.parse(txt);
+    if (Array.isArray(data)) {
+      entry = data.find(x => x && x.sig === sig) || null;
+    } else if (data && typeof data === 'object' && data.items) {
+      entry = data.items[sig] || null;
     }
-  } catch { /* 不存在/损坏都当未命中 */ }
+    matched = !!entry;
+  } catch { }
   return { matched, entry };
 });
-
 
 
 
