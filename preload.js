@@ -50,14 +50,19 @@ contextBridge.exposeInMainWorld('eapi', {
       if (await exists(mp)) return mp;
     }
     return null;
-  }
+  },
+  readFileAsBytes: async (absPath) => {
+    // 返回 Uint8Array，用于传递给 worker
+    return new Uint8Array(await fsp.readFile(absPath));
+  },
+
 })
 
 contextBridge.exposeInMainWorld('epubSig', {
   // drop 禁用
-  computeFromPath(filePath) {
-    return ipcRenderer.invoke('sig:from-path', filePath);
-  },
+  // computeFromPath(filePath) {
+  //   return ipcRenderer.invoke('sig:from-path', filePath);
+  // },
   // 从 File/Blob 计算 sig，并返回匹配结果（不经由路径）
   async computeFromFile(fileOrBlob) {
     const u8 = new Uint8Array(await fileOrBlob.arrayBuffer());
